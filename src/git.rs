@@ -47,9 +47,47 @@ mod tests {
     use tempfile::tempdir;
     use anyhow::Context;
     use std::io::Write;
+    use git2::{Repository,Signature};
 
     #[test]
     fn test_list_changes() -> anyhow::Result<()> {
+        let testnotes_dir = tempdir().context("failed to create tempdir")?;
+        let a = testnotes_dir.path().join("a");
+        let b = testnotes_dir.path().join("b");
+        let c = testnotes_dir.path().join("c");
+        std::fs::File::create(&a)?;
+        let mut b = std::fs::File::create(b)?;
+        let mut c = std::fs::File::create(c)?;
+
+        let repo = Repository::init(testnotes_dir.path())?;
+        let mut index = repo.index()?;
+        index.add_path(std::path::Path::new("a"))?;
+        let tree_id = index.write_tree()?;
+        index.write()?;
+
+        let tree = repo.find_tree(tree_id)?;
+
+        let author = Signature::now("you", "you@us")?;
+        let committer = Signature::now("me", "me@us")?;
+        let message = "Initial commit";
+
+        let mut parents: Vec<&git2::Commit<'_>> = vec!();
+        let head: git2::Commit<'_>;
+
+        if let Ok(commit) = repo.refname_to_id("HEAD").and_then(|oid| repo.find_commit(oid)) {
+            head = commit;
+            parents.push(&head);
+        };
+
+        repo.commit(Some("HEAD"), &author, &committer, message, &tree, &parents)?;
+
+        println!("{:?}", testnotes_dir.path());
+        std::mem::forget(testnotes_dir);
+        assert!(false);
+        Ok(())
+    }
+
+    fn _test_list_changes() -> anyhow::Result<()> {
         let testnotes_dir = tempdir().context("failed to create tempdir")?;
         let gnr = GitNoteRepo { git_dir: testnotes_dir.path().to_owned(), indexed_commit: None };
         let a = testnotes_dir.path().join("a");

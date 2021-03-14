@@ -62,6 +62,7 @@ fn main() -> anyhow::Result<()> {
     let query = parse_args();
     let config = config::parse("./config.toml")?;
     let index = index::Index::new(&config.index_dir);
+    let repo = git::NoteWell::init(&config.notes_dir, None);
     return Ok(());
 }
 

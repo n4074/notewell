@@ -7,6 +7,8 @@ use tantivy::{Score, DocAddress};
 use tantivy::ReloadPolicy;
 use tantivy::SnippetGenerator;
 
+use std::path::Path;
+
 pub struct Index {
     reader: tantivy::IndexReader,
     writer: tantivy::IndexWriter,
@@ -14,18 +16,18 @@ pub struct Index {
     queryparser: tantivy::query::QueryParser,
 }
 
-pub struct Note {
-    path: String,
-    fields: Vec<FieldValue>,
-}
+//pub struct Note {
+//    path: std::path::PathBuf,
+//    fields: Vec<FieldValue>,
+//}
 
-pub enum IndexOp {
-    Add(Note),
-    Delete(Note)
-}
+//pub enum IndexOp {
+//    Add(Note),
+//    Delete(Note)
+//}
 
 impl Index {
-    pub fn new(index_dir: &str) -> anyhow::Result<Index> {
+    pub fn new(index_dir: &Path) -> anyhow::Result<Index> {
 
         let index_dir = MmapDirectory::open(index_dir)?;
         let schema = Index::build_schema()?;
@@ -90,24 +92,35 @@ impl Index {
         return Ok(schema);
     }
 
-    pub fn delete(&mut self, note: &Note) -> anyhow::Result<()> {
+    pub fn sync(&mut self, diffs: Vec<(git2::Delta, std::path::PathBuf)>) -> anyhow::Result<()> {
+        for diff in diffs {
+            match diff {
+                (git2::Delta::Added, path) => { self.add(&path, vec!())? }
+                (git2::Delta::Deleted, path) => { self.delete(&path)? } 
+                _ => todo!()
+            }
+        } 
+        Ok(())
+    }
+
+    pub fn delete(&mut self, path: &Path) -> anyhow::Result<()> {
         let path_field = self.schema.get_field("path").unwrap();
-        let existing = Term::from_field_text(path_field, &note.path);
+        let existing = Term::from_field_text(path_field, path.to_str().unwrap());
         self.writer.delete_term(existing);
         self.writer.commit()?;
         return Ok(());
     }
 
-    pub fn add(&mut self, note: Note) -> anyhow::Result<()> {
+    pub fn add(&mut self, path: &Path, fields: Vec<FieldValue>) -> anyhow::Result<()> {
 
-        self.delete(&note);
+        self.delete(path)?;
 
         let path_field = self.schema.get_field("path").unwrap();
 
         let mut doc = Document::default();
-        doc.add_text(path_field, note.path);
+        doc.add_text(path_field, path.to_str().unwrap());
 
-        for field in note.fields {
+        for field in fields {
             doc.add(field);
         }
 

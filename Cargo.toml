@@ -1,5 +1,5 @@
 [package]
-name = "noteater"
+name = "notewell"
 version = "0.1.0"
 authors = ["Carl Hattenfels <carl.hattenfels@gmail.com>"]
 edition = "2018"

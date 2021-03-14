@@ -2,26 +2,27 @@
 use anyhow::{Context, Result};
 use std::fs::File;
 use std::io::Read;
+use std::path::{PathBuf, Path};
 use log::{warn};
 
 #[derive(Deserialize)]
 pub struct Config {
-    pub index_dir: String,
-    pub notes_dir: String,
+    pub index_dir: PathBuf,
+    pub notes_dir: PathBuf,
 }
 
 impl Config {
     fn new(index_dir: &str, notes_dir: &str) -> Result<Config> {
         return Ok(Config {
-            index_dir: index_dir.to_string(),
-            notes_dir: notes_dir.to_string(),
+            index_dir: Path::new(index_dir).to_owned(),
+            notes_dir: Path::new(notes_dir).to_owned(),
         });
     }
 
     fn default() -> Config {
         return Config {
-            index_dir: "/tmp/index".to_string(),
-            notes_dir: "/tmp/notes".to_string(),
+            index_dir: Path::new("/tmp/index").to_owned(),
+            notes_dir: Path::new("/tmp/notes").to_owned(),
         };
     }
 }

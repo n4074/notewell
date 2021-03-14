@@ -2,7 +2,7 @@ use std::process::Command;
 use anyhow::Result;
 use std::path::{Path,PathBuf};
 
-use git2::{Repository, Delta, Oid, Commit, Tree};
+use git2::{Repository, Delta, Oid, Commit, Tree, RepositoryInitOptions};
 use git2;
 
 pub struct NoteWell {
@@ -13,7 +13,7 @@ pub struct NoteWell {
 impl NoteWell {
 
     pub fn init(path: &Path, synced: Option<Oid>) -> Result<NoteWell> {
-        let repo = Repository::open(path)?;
+        let repo = Repository::init(path)?;
         Ok(NoteWell { repo, synced })
     }
 
@@ -26,14 +26,20 @@ impl NoteWell {
         }
     }
 
-    fn diffs(&self) -> Result<Vec<(Delta, PathBuf)>> {
-        let head = self.repo.head()?.peel_to_commit()?.tree()?; // If no head, we have nothing to index
-        let diff = self.repo.diff_tree_to_tree(self.last_tree()?.as_ref(), Some(&head), None)?;
+    pub fn synced(&mut self, commit: Oid) -> Result<()> {
+        self.synced = Some(commit);
+        Ok(())
+    }
 
-        Ok(diff.deltas().map(|delta| {
+    pub fn diff(&self) -> Result<(Oid, Vec<(Delta, PathBuf)>)> {
+        let head = self.repo.head()?.peel_to_commit()?;
+        let tree = head.tree()?; // If no head, we have nothing to index
+        let diff = self.repo.diff_tree_to_tree(self.last_tree()?.as_ref(), Some(&tree), None)?;
+
+        Ok((head.id(), diff.deltas().map(|delta| {
             let path = delta.new_file().path().unwrap().to_owned();
             (delta.status(), path)
-        }).collect())
+        }).collect()))
     }
 
     fn get_changes(&self) -> Result<Vec<(Delta,PathBuf)>> {

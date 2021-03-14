@@ -7,22 +7,25 @@ use log::{warn};
 
 #[derive(Deserialize)]
 pub struct Config {
-    pub index_dir: PathBuf,
-    pub notes_dir: PathBuf,
+    pub state: PathBuf,
+    pub index: PathBuf,
+    pub notes: PathBuf,
 }
 
 impl Config {
-    fn new(index_dir: &str, notes_dir: &str) -> Result<Config> {
+    fn new(index: &str, notes: &str, state: &str) -> Result<Config> {
         return Ok(Config {
-            index_dir: Path::new(index_dir).to_owned(),
-            notes_dir: Path::new(notes_dir).to_owned(),
+            state: Path::new(state).to_owned(),
+            index: Path::new(index).to_owned(),
+            notes: Path::new(notes).to_owned(),
         });
     }
 
     fn default() -> Config {
         return Config {
-            index_dir: Path::new("/tmp/index").to_owned(),
-            notes_dir: Path::new("/tmp/notes").to_owned(),
+            state: Path::new("/tmp/nb").to_owned(),
+            index: Path::new("/tmp/nb/index").to_owned(),
+            notes: Path::new("/tmp/notes").to_owned(),
         };
     }
 }

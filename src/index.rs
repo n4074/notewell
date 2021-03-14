@@ -10,28 +10,20 @@ use tantivy::SnippetGenerator;
 use std::path::Path;
 
 pub struct Index {
+    index: tantivy::Index,
     reader: tantivy::IndexReader,
     writer: tantivy::IndexWriter,
-    schema: tantivy::schema::Schema,
+    pub schema: tantivy::schema::Schema,
     queryparser: tantivy::query::QueryParser,
 }
 
-//pub struct Note {
-//    path: std::path::PathBuf,
-//    fields: Vec<FieldValue>,
-//}
-
-//pub enum IndexOp {
-//    Add(Note),
-//    Delete(Note)
-//}
-
 impl Index {
-    pub fn new(index_dir: &Path) -> anyhow::Result<Index> {
+    pub fn open_or_create(dir: &Path) -> anyhow::Result<Index> {
 
-        let index_dir = MmapDirectory::open(index_dir)?;
-        let schema = Index::build_schema()?;
-        let index = tantivy::Index::open_or_create(index_dir, schema.clone())?;
+        std::fs::create_dir_all(dir)?;
+        let dir = MmapDirectory::open(dir)?;
+        let schema = Self::build_schema()?;
+        let index = tantivy::Index::open_or_create(dir, schema.clone())?;
         let writer = index.writer(50_000_000)?;
 
         let reader = index
@@ -45,6 +37,7 @@ impl Index {
             tantivy::tokenizer::TokenizerManager::default());
 
         return Ok(Index {
+            index: index,
             reader: reader,
             writer: writer,
             schema: schema,
@@ -52,16 +45,20 @@ impl Index {
         });
     }
 
-    pub fn query(&self, query: &str) -> anyhow::Result<Vec<(Score, DocAddress)>> {
+    pub fn reload(&self) -> anyhow::Result<()> {
+        self.reader.reload().context("Failed to reload index")
+    }
 
+    pub fn query(&self, query: &str) -> anyhow::Result<Vec<(Score, DocAddress)>> {
         let searcher = self.reader.searcher();
         let query = self.queryparser.parse_query(query)?;
-
 
         let title = self.schema.get_field("title")
             .context("failed to find 'title' in schema")?;
         let body = self.schema.get_field("body")
             .context("failed to find 'body' in schema")?;
+        let path = self.schema.get_field("path")
+            .context("failed to find 'path' in schema")?;
 
         let snippet_generator = SnippetGenerator::create(&searcher, &*query, body)?;
 
@@ -71,7 +68,7 @@ impl Index {
             let doc = searcher.doc(doc_address)?;
             let snippet = snippet_generator.snippet_from_doc(&doc);
             println!("Document score {}:", score);
-            println!("title: {}", doc.get_first(title).unwrap().text().unwrap());
+            println!("path: {}", doc.get_first(path).unwrap().text().unwrap());
             println!("snippet: {}", snippet.fragments());
         }
 
@@ -90,17 +87,6 @@ impl Index {
         let schema = schema_builder.build();
 
         return Ok(schema);
-    }
-
-    pub fn sync(&mut self, diffs: Vec<(git2::Delta, std::path::PathBuf)>) -> anyhow::Result<()> {
-        for diff in diffs {
-            match diff {
-                (git2::Delta::Added, path) => { self.add(&path, vec!())? }
-                (git2::Delta::Deleted, path) => { self.delete(&path)? } 
-                _ => todo!()
-            }
-        } 
-        Ok(())
     }
 
     pub fn delete(&mut self, path: &Path) -> anyhow::Result<()> {
@@ -126,6 +112,7 @@ impl Index {
 
         self.writer.add_document(doc);
         self.writer.commit()?;
+        
         return Ok(());
     }
 
@@ -133,5 +120,19 @@ impl Index {
         self.writer.run(ops);
         self.writer.commit()?;
         return Ok(());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+    use anyhow::Context;
+    use std::io::Write;
+    use git2::{Repository,Signature};
+
+    #[test]
+    fn index_git_repo() -> anyhow::Result<()> {
+        Ok(())
     }
 }

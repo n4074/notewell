@@ -1,2 +1,3 @@
-index_dir = "/tmp/index"
-notes_dir = "/tmp/notes"
+index = "/tmp/nb/index"
+notes = "/tmp/notes"
+state = "/tmp/nb/state"

@@ -11,6 +11,7 @@ pulldown-cmark = "*"
 tempfile = "3"
 clap = "*"
 serde = "*"
+serde_json = "*"
 toml = "*"
 derive-new = "*"
 log = "*"
@@ -18,8 +19,4 @@ env_logger = "*"
 anyhow = "*"
 thiserror = "*"
 git2 = "*"
-
-# Branch using std::error::Error instead of failure::Error
-[dependencies.tantivy]
-git = "https://github.com/tantivy-search/tantivy"
-branch = "Hirevo-move-to-thiserror"
+tantivy = "0.14.0"

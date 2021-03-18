@@ -1,74 +1,75 @@
 use std::process::Command;
-use anyhow::Result;
+use anyhow::{Result, Context};
 use std::path::{Path,PathBuf};
 
-use git2::{Repository, Delta, Oid, Commit, Tree, RepositoryInitOptions};
+use git2::{Object, Reference, Repository, Delta, Oid, Commit, Tree, RepositoryInitOptions};
 use git2;
 
-pub struct NoteWell {
+pub struct Repo {
     repo: Repository,
-    synced: Option<Oid>, // Last index commit
 }
 
-impl NoteWell {
+impl<'repo> Repo {
 
-    pub fn init(path: &Path, synced: Option<Oid>) -> Result<NoteWell> {
+    pub fn open_or_create<P: AsRef<Path>>(path: P) -> Result<Repo> {
         let repo = Repository::init(path)?;
-        Ok(NoteWell { repo, synced })
+        Ok(Repo { repo })
     }
 
-    fn last_tree(&self) -> Result<Option<Tree<'_>>> {
-        if let Some(oid) = self.synced {
-            let tree = self.repo.find_commit(oid)?.tree()?;
-            Ok(Some(tree))
-        } else {
-            Ok(None)
-        }
+    pub fn resolve_commit(&self, oid: Oid) -> Result<Commit<'_>> {
+        self.repo.find_commit(oid).context("Unable to resolve commit.")
     }
-
-    pub fn synced(&mut self, commit: Oid) -> Result<()> {
-        self.synced = Some(commit);
-        Ok(())
+    pub fn resolve(&self, rfn: &str) -> Result<Object<'_>> {
+        self.repo.revparse_single(rfn).context("Failed to find reference")
     }
+    pub fn diff(&self, old: Option<Commit<'repo>>, new: Option<Commit<'repo>>) -> Result<Vec<(Delta, PathBuf)>> {
 
-    pub fn diff(&self) -> Result<(Oid, Vec<(Delta, PathBuf)>)> {
-        let head = self.repo.head()?.peel_to_commit()?;
-        let tree = head.tree()?; // If no head, we have nothing to index
-        let diff = self.repo.diff_tree_to_tree(self.last_tree()?.as_ref(), Some(&tree), None)?;
+       let oldtree: Option<Tree<'_>> = old.map(|c| c.tree()).transpose()?;
 
-        Ok((head.id(), diff.deltas().map(|delta| {
+       let newtree = if let Some(commit) = new {
+           commit.tree()?
+       } else {
+           self.head()?.tree()?
+       };
+        
+        // If no head, we have nothing to index
+        let diff = self.repo.diff_tree_to_tree(oldtree.as_ref(), Some(&newtree), None)?;
+
+        Ok(diff.deltas().map(|delta| {
             let path = delta.new_file().path().unwrap().to_owned();
             (delta.status(), path)
-        }).collect()))
+        }).collect())
     }
 
-    fn get_changes(&self) -> Result<Vec<(Delta,PathBuf)>> {
-        let head = self.repo.head();
-        let mut diffs = vec!();
-        if self.synced.is_some() && head.is_ok() {
-            let head = head.unwrap().peel_to_tree()?;
-            let synced = self.repo.find_commit(self.synced.unwrap())?.tree()?;
-            let tree_diff = self.repo.diff_tree_to_tree(Some(&synced), Some(&head), None)?;
-            let workdir_dir = self.repo.diff_tree_to_workdir_with_index(Some(&head), None)?; 
-
-            for delta in tree_diff.deltas().chain(workdir_dir.deltas()) {
-                let path = delta.new_file().path().unwrap().to_owned();
-                diffs.push((delta.status(), path));
-            }
-
-        } else if self.synced.is_none() || (head.is_err() && head.err().unwrap().code() == git2::ErrorCode::UnbornBranch) {
-            for item in self.repo.index()?.iter() {
-                let path = Path::new(std::str::from_utf8(&item.path)?).to_owned(); 
-                diffs.push((Delta::Added, path))
-            }
-        } else {
-            todo!("Handle error here")
-        }
-
-        return Ok(diffs);
+    pub fn head(&'repo self) -> anyhow::Result<Commit<'repo>> {
+        Ok(self.repo.head()?.peel_to_commit()?)
     }
 
+    //fn get_changes(&self, synced: Option<Oid>) -> Result<Vec<(Delta,PathBuf)>> {
+    //    let head = self.repo.head();
+    //    let mut diffs = vec!();
+    //    if synced.is_some() && head.is_ok() {
+    //        let head = head.unwrap().peel_to_tree()?;
+    //        let synced = self.repo.find_commit(synced.unwrap())?.tree()?;
+    //        let tree_diff = self.repo.diff_tree_to_tree(Some(&synced), Some(&head), None)?;
+    //        let workdir_dir = self.repo.diff_tree_to_workdir_with_index(Some(&head), None)?; 
 
+    //        for delta in tree_diff.deltas().chain(workdir_dir.deltas()) {
+    //            let path = delta.new_file().path().unwrap().to_owned();
+    //            diffs.push((delta.status(), path));
+    //        }
+
+    //    } else if synced.is_none() || (head.is_err() && head.err().unwrap().code() == git2::ErrorCode::UnbornBranch) {
+    //        for item in self.repo.index()?.iter() {
+    //            let path = Path::new(std::str::from_utf8(&item.path)?).to_owned(); 
+    //            diffs.push((Delta::Added, path))
+    //        }
+    //    } else {
+    //        todo!("Handle error here")
+    //    }
+
+    //    return Ok(diffs);
+    //}
 }
 
 #[cfg(test)]
@@ -115,14 +116,14 @@ mod tests {
         };
 
         let repo2 = Repository::open(testnotes_dir.path())?;
-        let nb_none = NoteWell { repo: repo2, synced: None };
+        let nb_none = Repo { repo: repo2 };
 
         repo.commit(Some("HEAD"), &author, &committer, message, &tree, &parents)?;
 
         let oid = repo.head()?.peel_to_commit()?.id();
 
         let repo2 = Repository::open(testnotes_dir.path())?;
-        let nb = NoteWell { repo: repo2, synced: Some(oid) };
+        let nb = Repo { repo: repo2 };
 
 
         let mut index = repo.index()?;
@@ -155,11 +156,9 @@ mod tests {
 
 
         let repo3 = Repository::open(testnotes_dir.path())?;
-        let nb = NoteWell { repo: repo3, synced: Some(oid) };
-        println!("{:?}", nb.get_changes()?);
-        println!("{:?}", nb.diffs()?);
-        println!("{:?}", nb_none.get_changes()?);
-        println!("{:?}", nb_none.diffs()?);
+        let nb = Repo { repo: repo3, };
+        println!("{:?}", nb.diff(Some(nb.resolve_commit(oid)?), None)?);
+        println!("{:?}", nb_none.diff(Some(nb.resolve_commit(oid)?), None)?);
 
         println!("{:?}\n", testnotes_dir.path());
 

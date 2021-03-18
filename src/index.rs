@@ -6,22 +6,62 @@ use tantivy::schema::*;
 use tantivy::{Score, DocAddress};
 use tantivy::ReloadPolicy;
 use tantivy::SnippetGenerator;
+use tantivy::UserOperation;
+use tantivy::schema::Field;
+use anyhow::anyhow;
 
-use std::path::Path;
+use std::path::{PathBuf,Path};
 
 pub struct Index {
     index: tantivy::Index,
     reader: tantivy::IndexReader,
     writer: tantivy::IndexWriter,
-    pub schema: tantivy::schema::Schema,
+    schema: tantivy::schema::Schema,
     queryparser: tantivy::query::QueryParser,
+    transactions: Vec<tantivy::UserOperation>,
+}
+
+pub struct DocumentBuilder<'index> {
+    schema: &'index tantivy::schema::Schema,
+    pub path: PathBuf,
+    doc: tantivy::Document,
+}
+
+impl<'index> DocumentBuilder<'_> {
+
+    fn new(schema: &'index tantivy::schema::Schema, path: &Path) -> DocumentBuilder<'index> {
+        let mut doc = tantivy::Document::default();
+        let pathfield = schema.get_field("path").unwrap();
+        doc.add_text(pathfield, path.to_str().unwrap());
+        DocumentBuilder {
+            schema,
+            path: path.to_owned(),
+            doc
+        }
+    }
+
+    fn add_field(&mut self, name: &str, content: &str) -> &DocumentBuilder {
+        let field = self.schema.get_field(name).unwrap();
+        self.doc.add_text(field, &content);
+        self
+    }
+
+    pub fn body(&mut self, content: &str) -> &DocumentBuilder {
+        self.add_field("body", content)
+    }
+
+    pub fn document(self) -> Document {
+        self.doc
+    }
+
+    
 }
 
 impl Index {
-    pub fn open_or_create(dir: &Path) -> anyhow::Result<Index> {
+    pub fn open_or_create<P: AsRef<Path>>(dir: P) -> anyhow::Result<Index> {
 
-        std::fs::create_dir_all(dir)?;
-        let dir = MmapDirectory::open(dir)?;
+        std::fs::create_dir_all(&dir)?;
+        let dir = MmapDirectory::open(&dir)?;
         let schema = Self::build_schema()?;
         let index = tantivy::Index::open_or_create(dir, schema.clone())?;
         let writer = index.writer(50_000_000)?;
@@ -36,12 +76,15 @@ impl Index {
             vec![],
             tantivy::tokenizer::TokenizerManager::default());
 
+        let transactions = vec!();
+
         return Ok(Index {
             index: index,
             reader: reader,
             writer: writer,
             schema: schema,
             queryparser: queryparser,
+            transactions
         });
     }
 
@@ -53,8 +96,6 @@ impl Index {
         let searcher = self.reader.searcher();
         let query = self.queryparser.parse_query(query)?;
 
-        let title = self.schema.get_field("title")
-            .context("failed to find 'title' in schema")?;
         let body = self.schema.get_field("body")
             .context("failed to find 'body' in schema")?;
         let path = self.schema.get_field("path")
@@ -67,6 +108,7 @@ impl Index {
         for (score, doc_address) in top_docs {
             let doc = searcher.doc(doc_address)?;
             let snippet = snippet_generator.snippet_from_doc(&doc);
+            println!("{}", self.schema.to_json(&doc));
             println!("Document score {}:", score);
             println!("path: {}", doc.get_first(path).unwrap().text().unwrap());
             println!("snippet: {}", snippet.fragments());
@@ -89,37 +131,27 @@ impl Index {
         return Ok(schema);
     }
 
-    pub fn delete(&mut self, path: &Path) -> anyhow::Result<()> {
-        let path_field = self.schema.get_field("path").unwrap();
-        let existing = Term::from_field_text(path_field, path.to_str().unwrap());
-        self.writer.delete_term(existing);
-        self.writer.commit()?;
-        return Ok(());
+    pub fn documentbuilder(&self, path: &Path) -> DocumentBuilder<'_> {
+        DocumentBuilder::new(&self.schema, path)
     }
 
-    pub fn add(&mut self, path: &Path, fields: Vec<FieldValue>) -> anyhow::Result<()> {
-
-        self.delete(path)?;
-
-        let path_field = self.schema.get_field("path").unwrap();
-
-        let mut doc = Document::default();
-        doc.add_text(path_field, path.to_str().unwrap());
-
-        for field in fields {
-            doc.add(field);
-        }
-
-        self.writer.add_document(doc);
-        self.writer.commit()?;
-        
-        return Ok(());
+    pub fn add(&mut self, path: &Path, doc: Document) {
+        println!("Adding document {:?}", path);
+        self.transactions.push(UserOperation::Add(doc));
     }
 
-    pub fn run(&mut self, ops: Vec<tantivy::UserOperation>) -> anyhow::Result<()> {
-        self.writer.run(ops);
-        self.writer.commit()?;
-        return Ok(());
+    pub fn delete(&mut self, path: &Path) {
+        println!("Deleting document {:?}", path);
+        let path_field = self.schema.get_field("path").unwrap();
+        let term = Term::from_field_text(path_field, path.to_str().unwrap());
+        self.transactions.push(UserOperation::Delete(term));
+    }
+
+    pub fn commit(&mut self) -> anyhow::Result<u64> {
+        let transactions = self.transactions.drain(..).collect();
+        self.writer.run(transactions);
+        let res = self.writer.commit().context("Failed to commit")?;
+        Ok(res)
     }
 }
 

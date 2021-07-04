@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Context;
 use tantivy::collector::TopDocs;
 use tantivy::directory::MmapDirectory;
 use tantivy::query::QueryParser;
@@ -7,13 +7,13 @@ use tantivy::{Score, DocAddress};
 use tantivy::ReloadPolicy;
 use tantivy::SnippetGenerator;
 use tantivy::UserOperation;
-use tantivy::schema::Field;
-use anyhow::anyhow;
+//use tantivy::schema::Field;
+//use anyhow::anyhow;
 
 use std::path::{PathBuf,Path};
 
 pub struct Index {
-    index: tantivy::Index,
+    _index: tantivy::Index,
     reader: tantivy::IndexReader,
     writer: tantivy::IndexWriter,
     schema: tantivy::schema::Schema,
@@ -21,40 +21,41 @@ pub struct Index {
     transactions: Vec<tantivy::UserOperation>,
 }
 
-pub struct DocumentBuilder<'index> {
-    schema: &'index tantivy::schema::Schema,
+pub struct Note {
+    schema: tantivy::schema::Schema,
     pub path: PathBuf,
     doc: tantivy::Document,
 }
 
-impl<'index> DocumentBuilder<'_> {
+const DEFAULT_FIELD_NAME: &str = "body";
 
-    fn new(schema: &'index tantivy::schema::Schema, path: &Path) -> DocumentBuilder<'index> {
+impl Note {
+
+    fn new(schema: tantivy::schema::Schema, path: &Path) -> Note {
         let mut doc = tantivy::Document::default();
         let pathfield = schema.get_field("path").unwrap();
         doc.add_text(pathfield, path.to_str().unwrap());
-        DocumentBuilder {
+        Note {
             schema,
             path: path.to_owned(),
             doc
         }
     }
 
-    fn add_field(&mut self, name: &str, content: &str) -> &DocumentBuilder {
+    fn add_field(&mut self, name: &str, content: &str) -> &Note {
         let field = self.schema.get_field(name).unwrap();
         self.doc.add_text(field, &content);
         self
     }
 
-    pub fn body(&mut self, content: &str) -> &DocumentBuilder {
+    pub fn body(&mut self, content: &str) -> &Note {
+        println!("here: {:?}", content);
         self.add_field("body", content)
     }
 
     pub fn document(self) -> Document {
         self.doc
     }
-
-    
 }
 
 impl Index {
@@ -73,13 +74,14 @@ impl Index {
 
         let queryparser = QueryParser::new(
             schema.clone(),
-            vec![],
+            vec![schema.get_field(DEFAULT_FIELD_NAME).unwrap()],
             tantivy::tokenizer::TokenizerManager::default());
+
 
         let transactions = vec!();
 
         return Ok(Index {
-            index: index,
+            _index: index,
             reader: reader,
             writer: writer,
             schema: schema,
@@ -92,8 +94,9 @@ impl Index {
         self.reader.reload().context("Failed to reload index")
     }
 
-    pub fn query(&self, query: &str) -> anyhow::Result<Vec<(Score, DocAddress)>> {
+    pub fn query(&self, query: &str) -> anyhow::Result<Vec<Document>> {
         let searcher = self.reader.searcher();
+
         let query = self.queryparser.parse_query(query)?;
 
         let body = self.schema.get_field("body")
@@ -105,16 +108,18 @@ impl Index {
 
         let top_docs: Vec<(Score,DocAddress)> = searcher.search(&query, &TopDocs::with_limit(10))?;
 
-        for (score, doc_address) in top_docs {
-            let doc = searcher.doc(doc_address)?;
-            let snippet = snippet_generator.snippet_from_doc(&doc);
-            println!("{}", self.schema.to_json(&doc));
-            println!("Document score {}:", score);
-            println!("path: {}", doc.get_first(path).unwrap().text().unwrap());
-            println!("snippet: {}", snippet.fragments());
-        }
+        //for (score, doc_address) in top_docs {
+        //    let doc = searcher.doc(doc_address)?;
+        //    let snippet = snippet_generator.snippet_from_doc(&doc);
+        //    println!("{}", self.schema.to_json(&doc));
+        //    println!("Document score {}:", score);
+        //    println!("path: {}", doc.get_first(path).unwrap().text().unwrap());
+        //    println!("snippet: {}", snippet.fragments());
+        //}
 
-        return Ok(vec![]);
+        let docs: Vec<Document> = top_docs.iter().map(|(_,addr)| searcher.doc(*addr).unwrap()).collect();
+
+        return Ok(docs);
     }
 
     fn build_schema() -> anyhow::Result<tantivy::schema::Schema> {
@@ -131,13 +136,13 @@ impl Index {
         return Ok(schema);
     }
 
-    pub fn documentbuilder(&self, path: &Path) -> DocumentBuilder<'_> {
-        DocumentBuilder::new(&self.schema, path)
+    pub fn notebuilder(&self, path: &Path) -> Note {
+        Note::new(self.schema.clone(), path)
     }
 
-    pub fn add(&mut self, path: &Path, doc: Document) {
+    pub fn add(&mut self, path: &Path, note: Note) {
         println!("Adding document {:?}", path);
-        self.transactions.push(UserOperation::Add(doc));
+        self.transactions.push(UserOperation::Add(note.document()));
     }
 
     pub fn delete(&mut self, path: &Path) {
@@ -157,6 +162,7 @@ impl Index {
 
 #[cfg(test)]
 mod tests {
+    #![allow(unused_imports)]
     use super::*;
     use tempfile::tempdir;
     use anyhow::Context;

@@ -1,40 +1,56 @@
 // #[macro_use]
 
-use log::{debug, error, info, warn};
-use std::fs;
+use log::{debug, info};
 use std::fs::File;
-use std::io::Read;
 use std::path::{PathBuf, Path};
+use std::ffi::OsStr;
 
-use git2::Oid;
 use anyhow::{Context, Result};
 use serde::{Serialize, Deserialize};
 
-use derive_new::new;
+use std::process::Command; 
+
 use clap::Arg;
 
-use pulldown_cmark::{Event, Options, Parser, Tag};
+
+//use pulldown_cmark::{Event, Options, Parser, Tag};
 
 mod index;
-mod git;
+mod repo;
 mod config;
 
-use git::*;
+use repo::*;
 use index::*;
 
-fn parse_args() -> String {
-    let matches = clap::App::new("noteater")
+fn parse_args() -> clap::ArgMatches<'static> {
+    return clap::App::new("noteater")
         .version("0.1")
         .author("Carl Hattenfels")
         .about("Simple note search interface")
         .arg(
             Arg::with_name("QUERYSTRING")
                 .help("Query to run against notes directory")
-                .required(true)
+                .required(false)
                 .index(1),
         )
-        .get_matches();
-    return String::from(matches.value_of("QUERYSTRING").unwrap());
+        .subcommand(clap::SubCommand::with_name("add")
+            .about("add a new note")
+            .arg(Arg::with_name("path")
+                .short("p")
+                .help("note path")))
+        .subcommand(clap::SubCommand::with_name("edit")
+            .about("edit an existing note")
+            .arg(Arg::with_name("PATH")
+                .index(1)
+                .help("note path")))
+        .get_matches()
+}
+
+fn new_note<P: AsRef<Path>>(path: P) {
+    Command::new("vim")
+        .args(&[path.as_ref()])
+        .spawn()
+        .expect("wat");
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -61,7 +77,8 @@ impl State {
     }
 
     fn save(&self) -> Result<()> {
-        let file = std::fs::OpenOptions::new().write(true).truncate(true).open(&self.path)?;
+        debug!("Saving state to {}", self.path.to_string_lossy());
+        let file = std::fs::OpenOptions::new().create(true).write(true).truncate(true).open(&self.path)?;
         serde_json::to_writer(file, &self).context("Failed to serialise state")
     }
 }
@@ -70,23 +87,29 @@ struct App {
     pub appdir: PathBuf,
     pub config: config::Config,
     pub index: index::Index,
-    pub repo: git::Repo, 
+    pub repo: repo::Repo, 
     pub state: State,
 }
 
 impl App {
-    fn new(appdir: PathBuf) -> Result<App> {
-        let config = config::Config::open_or_create(appdir.clone().join("config.toml"))?;
+    fn open_or_create<P: AsRef<Path>>(appdir: P) -> Result<App> {
+
+        if !appdir.as_ref().exists() {
+            info!("Creating new app directory at {}", appdir.as_ref().to_string_lossy());
+            std::fs::create_dir_all(&appdir)?;
+        }
+
+        let config = config::Config::open_or_create(appdir.as_ref().clone().join("config.toml"))?;
+        let state = State::open_or_create(appdir.as_ref().clone().join("state"))?;
         let repo = Repo::open_or_create(&config.notes)?;
         let index = Index::open_or_create(&config.index)?;
-        let state = State::open_or_create(appdir.clone().join("state"))?;
 
         Ok(App {
             config,
             index,
             repo,
             state,
-            appdir
+            appdir: appdir.as_ref().to_path_buf()
         })
     }
 
@@ -99,16 +122,19 @@ impl App {
             match diff {
                 (git2::Delta::Added, path) | (git2::Delta::Modified, path) => { 
                     self.index.delete(&path);
+                    println!("{:?}", path);
 
-                    let mut doc = self.index.documentbuilder(&path);
+                    let mut note = self.index.notebuilder(&path);
 
-                    let content = std::fs::read_to_string(&self.config.notes.join(&doc.path))?;
-                    doc.body(&content);
+                    let content = std::fs::read_to_string(&self.config.notes.join(&note.path))?;
+                    note.body(&content);
 
-                    self.index.add(&path, doc.document());
+                    //let doc = doc_builder.document();
+
+                    self.index.add(&path, note);
                 }
                 (git2::Delta::Deleted, path) => { self.index.delete(&path) } 
-                (git2::Delta::Renamed, path) => { todo!("Handling Renaming. Need both old and new path") } 
+                (git2::Delta::Renamed, _path) => { todo!("Handling Renaming. Need both old and new path") } 
                 _ => todo!()
             }
         } 
@@ -125,12 +151,26 @@ impl App {
 }
 
 fn main() -> anyhow::Result<()> {
-    let query = parse_args();
-    let mut app = App::new(PathBuf::new())?;
+    env_logger::init();
+
+    let matches = parse_args();
+    //let query = String::from(matches.value_of("QUERYSTRING").unwrap());
+    let appdir = std::env::var("NB").unwrap_or("~/.nb".to_owned());
+    let mut app = App::open_or_create(appdir)?;
 
     app.sync()?;
 
-    app.index.query(&query)?;
+    match matches.subcommand() {
+        ("edit", Some(path)) => { new_note(path.value_of("PATH").unwrap()) }
+        _ => {
+            let query = String::from(matches.value_of("QUERYSTRING").unwrap());
+            if let Ok(res) = app.index.query(&query) {
+                println!("{:?}", res);
+            }
+        }
+    }
+
+    
 
     app.state.save()?;
 

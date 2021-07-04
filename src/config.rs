@@ -13,6 +13,7 @@ pub struct Config {
 }
 
 impl Config {
+    #[allow(dead_code)]
     fn new(index: &str, notes: &str, state: &str) -> Result<Config> {
         return Ok(Config {
             state: Path::new(state).to_owned(),
@@ -38,7 +39,7 @@ impl Config {
         let mut file = match File::open(&path) {
             Ok(file) => file,
             Err(_) => {
-                warn!("Could not find config file, using default!");
+                warn!("Could not find config file, using embedded default");
                 // TODO: Generate config file
                 return Ok(Config::default());
             }

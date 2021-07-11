@@ -3,7 +3,7 @@
 use log::{debug, info};
 use std::fs::File;
 use std::path::{PathBuf, Path};
-use std::ffi::OsStr;
+//use std::ffi::OsStr;
 
 use anyhow::{Context, Result};
 use serde::{Serialize, Deserialize};
@@ -18,32 +18,38 @@ use clap::Arg;
 mod index;
 mod repo;
 mod config;
+mod heap;
 
 use repo::*;
 use index::*;
 
-fn parse_args() -> clap::ArgMatches<'static> {
+fn arg_parser<'a,'b>() -> clap::App<'a,'b> {
     return clap::App::new("noteater")
         .version("0.1")
         .author("Carl Hattenfels")
         .about("Simple note search interface")
-        .arg(
-            Arg::with_name("QUERYSTRING")
-                .help("Query to run against notes directory")
-                .required(false)
-                .index(1),
+        .subcommand(clap::SubCommand::with_name("search")
+            .arg(
+                Arg::with_name("QUERYSTRING")
+                    .help("Query to run against notes directory")
+                    .required(true)
+                    //.last(true)
+                    .index(1)
+                    .multiple(true),
+            )
         )
         .subcommand(clap::SubCommand::with_name("add")
             .about("add a new note")
             .arg(Arg::with_name("path")
                 .short("p")
-                .help("note path")))
+                .help("note path"))
+        )
         .subcommand(clap::SubCommand::with_name("edit")
             .about("edit an existing note")
             .arg(Arg::with_name("PATH")
                 .index(1)
-                .help("note path")))
-        .get_matches()
+                .help("note path"))
+        )
 }
 
 fn new_note<P: AsRef<Path>>(path: P) {
@@ -101,8 +107,8 @@ impl App {
 
         let config = config::Config::open_or_create(appdir.as_ref().clone().join("config.toml"))?;
         let state = State::open_or_create(appdir.as_ref().clone().join("state"))?;
-        let repo = Repo::open_or_create(&config.notes)?;
-        let index = Index::open_or_create(&config.index)?;
+        let repo = Repo::init(&config.notes)?;
+        let index = Index::create(&config.index)?;
 
         Ok(App {
             config,
@@ -150,27 +156,35 @@ impl App {
     }
 }
 
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    let matches = parse_args();
+    let app = arg_parser();
+
     //let query = String::from(matches.value_of("QUERYSTRING").unwrap());
+    match app.clone().get_matches().subcommand() {
+        ("edit", Some(path)) => { new_note(path.value_of("PATH").unwrap()) }
+        ("init", Some(path)) => { }
+        ("search", Some(args)) => {
+            let query = String::from(args.value_of("QUERYSTRING").unwrap());
+            println!("{:?}", query);
+            //if let Ok(res) = app.index.query(&query) {
+            //    println!("{:?}", res);
+            //}
+        }
+        (command,_) => {
+            app.clone().print_help();
+            return Ok(());
+        }
+    }
+
     let appdir = std::env::var("NB").unwrap_or("~/.nb".to_owned());
     let mut app = App::open_or_create(appdir)?;
 
     app.sync()?;
 
-    match matches.subcommand() {
-        ("edit", Some(path)) => { new_note(path.value_of("PATH").unwrap()) }
-        _ => {
-            let query = String::from(matches.value_of("QUERYSTRING").unwrap());
-            if let Ok(res) = app.index.query(&query) {
-                println!("{:?}", res);
-            }
-        }
-    }
 
-    
 
     app.state.save()?;
 

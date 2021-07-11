@@ -1,4 +1,4 @@
- use serde::Deserialize;
+use serde::Deserialize;
 use anyhow::{Context, Result};
 use std::fs::File;
 use std::io::Read;
@@ -50,5 +50,4 @@ impl Config {
             .with_context(|| format!("Error while reading config {}", path.as_ref().to_string_lossy()))?;
         return toml::from_str(&config_toml).context("Failed to decode config file");
     }
-
 }

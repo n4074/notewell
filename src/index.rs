@@ -59,12 +59,20 @@ impl Note {
 }
 
 impl Index {
-    pub fn open_or_create<P: AsRef<Path>>(dir: P) -> anyhow::Result<Index> {
 
-        std::fs::create_dir_all(&dir)?;
-        let dir = MmapDirectory::open(&dir)?;
+    pub fn open<P: AsRef<Path>>(dir: P) -> anyhow::Result<Index> {
         let schema = Self::build_schema()?;
-        let index = tantivy::Index::open_or_create(dir, schema.clone())?;
+        let index = tantivy::Index::open_in_dir(dir)?;
+        Self::init(index, schema)
+    }
+
+    pub fn create<P: AsRef<Path>>(dir: P) -> anyhow::Result<Index> {
+        let schema = Self::build_schema()?;
+        let index = tantivy::Index::create_in_dir(dir, schema.clone())?;
+        Self::init(index, schema)
+    }
+
+    fn init(index: tantivy::Index, schema: tantivy::schema::Schema) -> anyhow::Result<Index> {
         let writer = index.writer(50_000_000)?;
 
         let reader = index

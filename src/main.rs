@@ -1,12 +1,7 @@
-// #[macro_use]
-
-use log::{debug, info};
-use std::fs::File;
+use log::{debug};
 use std::path::{PathBuf, Path};
-//use std::ffi::OsStr;
 
 use anyhow::{Context, Result};
-use serde::{Serialize, Deserialize};
 
 use std::process::Command; 
 
@@ -15,10 +10,10 @@ use clap::{crate_description, crate_authors, crate_version, crate_name};
 
 mod index;
 mod repo;
-mod config;
+//mod config;
 mod heap;
 
-use repo::*;
+//use repo::*;
 use index::*;
 use heap::Heap;
 

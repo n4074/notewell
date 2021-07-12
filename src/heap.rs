@@ -1,9 +1,7 @@
-use serde::{Serialize,Deserialize};
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 //use std::fs::File;
 //use std::io::Read;
 use std::path::{PathBuf, Path};
-use sled::Db;
 use log::{debug};
 
 use crate::repo;
@@ -13,10 +11,6 @@ use crate::index;
 struct HeapState {
     commit: Option<String>, // Last index commit
     path: PathBuf 
-}
-
-struct HeapConfig {
-
 }
 
 pub struct Heap {
@@ -39,7 +33,7 @@ const NB_SUBDIR: &str = ".nb";
 
 impl Heap {
     pub fn init<P: AsRef<Path>>(path: P) -> Result<Heap> {
-        let mut path: PathBuf = path.as_ref().to_owned();
+        let path: PathBuf = path.as_ref().to_owned();
 
         if path.exists() {
             bail!("Directory exists: {}", path.display());
@@ -76,7 +70,7 @@ impl Heap {
     }
 
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Heap> {
-        let mut path: PathBuf = path.as_ref().to_owned();
+        let path: PathBuf = path.as_ref().to_owned();
 
         let repo = crate::repo::Repo::open(&path)?;
 
@@ -136,7 +130,7 @@ impl Heap {
         self.index.commit()?;
         self.index.reload()?;
 
-        self.db.insert(b"commit", head.id().to_string().into_bytes());
+        self.db.insert(b"commit", head.id().to_string().into_bytes())?;
         //self.state.commit = Some(head.id().to_string());
         //self.state.save()?;
 
@@ -187,66 +181,8 @@ impl Heap {
 //    pub state: State,
 //}
 
-/*impl Heap {
-    fn open_or_create<P: AsRef<Path>>(appdir: P) -> Result<App> {
-
-        if !appdir.as_ref().exists() {
-            info!("Creating new app directory at {}", appdir.as_ref().to_string_lossy());
-            std::fs::create_dir_all(&appdir)?;
-        }
-
-        let config = config::Config::open_or_create(appdir.as_ref().clone().join("config.toml"))?;
-        let state = State::open_or_create(appdir.as_ref().clone().join("state"))?;
-        let repo = Repo::open_or_create(&config.notes)?;
-        let index = Index::open_or_create(&config.index)?;
-
-        Ok(App {
-            config,
-            index,
-            repo,
-            state,
-            appdir: appdir.as_ref().to_path_buf()
-        })
-    }
-
-    fn sync(&mut self) -> anyhow::Result<()> {
-
-        let head = self.repo.head()?;
-        let diffs = self.repo.diff(self.state.commit.as_ref(), None)?;
-    
-        for diff in diffs {
-            match diff {
-                (git2::Delta::Added, path) | (git2::Delta::Modified, path) => { 
-                    self.index.delete(&path);
-                    println!("{:?}", path);
-
-                    let mut note = self.index.notebuilder(&path);
-
-                    let content = std::fs::read_to_string(&self.config.notes.join(&note.path))?;
-                    note.body(&content);
-
-                    //let doc = doc_builder.document();
-
-                    self.index.add(&path, note);
-                }
-                (git2::Delta::Deleted, path) => { self.index.delete(&path) } 
-                (git2::Delta::Renamed, _path) => { todo!("Handling Renaming. Need both old and new path") } 
-                _ => todo!()
-            }
-        } 
-
-        self.index.commit()?;
-        self.index.reload()?;
-
-        self.state.commit = Some(head.id().to_string());
-        self.state.save()?;
-
-
-        Ok(())
-    }
-}*/
-
 mod test {
+    #[allow(unused_imports)]
     use super::*;
 
     #[test]

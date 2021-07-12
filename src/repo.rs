@@ -60,17 +60,17 @@ mod tests {
     use std::io::Write;
     use git2::{Repository,Signature};
 
-    //#[test]
+    #[test]
     fn test_list_changes() -> anyhow::Result<()> {
         let testnotes_dir = tempdir().context("failed to create tempdir")?;
         let a = testnotes_dir.path().join("a");
         let b = testnotes_dir.path().join("b");
         let c = testnotes_dir.path().join("c");
         let d = testnotes_dir.path().join("d");
-        let mut a = std::fs::File::create(&a)?;
-        let mut b = std::fs::File::create(b)?;
+        let _a = std::fs::File::create(&a)?;
+        let _b = std::fs::File::create(b)?;
         let mut c = std::fs::File::create(c)?;
-        let mut d = std::fs::File::create(d)?;
+        let _d = std::fs::File::create(d)?;
 
         let repo = Repository::init(testnotes_dir.path())?;
 
@@ -103,7 +103,7 @@ mod tests {
         let oid = repo.head()?.peel_to_commit()?.id();
 
         let repo2 = Repository::open(testnotes_dir.path())?;
-        let nb = Repo { repo: repo2 };
+        let _nb = Repo { repo: repo2 };
 
 
         let mut index = repo.index()?;
@@ -131,7 +131,7 @@ mod tests {
         index.add_path(std::path::Path::new("c"))?;
         index.add_path(std::path::Path::new("d"))?;
         let tree_id = index.write_tree()?;
-        let tree = repo.find_tree(tree_id)?;
+        let _tree = repo.find_tree(tree_id)?;
         index.write()?;
 
 

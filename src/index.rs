@@ -1,6 +1,5 @@
 use anyhow::Context;
 use tantivy::collector::TopDocs;
-use tantivy::directory::MmapDirectory;
 use tantivy::query::QueryParser;
 use tantivy::schema::*;
 use tantivy::{Score, DocAddress};
@@ -109,10 +108,10 @@ impl Index {
 
         let body = self.schema.get_field("body")
             .context("failed to find 'body' in schema")?;
-        let path = self.schema.get_field("path")
+        let _path = self.schema.get_field("path")
             .context("failed to find 'path' in schema")?;
 
-        let snippet_generator = SnippetGenerator::create(&searcher, &*query, body)?;
+        let _snippet_generator = SnippetGenerator::create(&searcher, &*query, body)?;
 
         let top_docs: Vec<(Score,DocAddress)> = searcher.search(&query, &TopDocs::with_limit(10))?;
 

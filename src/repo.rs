@@ -16,7 +16,7 @@ impl<'repo> Repo {
 
     pub fn init<P: AsRef<Path>>(path: P) -> Result<Repo> {
         let repo = Repository::init(path)?;
-        repo.add_ignore_rule(".nb");
+        repo.add_ignore_rule(".nb")?;
         Ok(Repo { repo })
     }
 

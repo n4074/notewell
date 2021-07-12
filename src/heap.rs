@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 //use std::io::Read;
 use std::path::{PathBuf, Path};
 use sled::Db;
-//use log::{warn};
+use log::{debug};
 
 use crate::repo;
 use crate::index;
@@ -19,7 +19,7 @@ struct HeapConfig {
 
 }
 
-struct Heap {
+pub struct Heap {
     path: PathBuf,
     db: sled::Db,
     index: index::Index,
@@ -38,7 +38,7 @@ impl std::fmt::Debug for Heap {
 const NB_SUBDIR: &str = ".nb";
 
 impl Heap {
-    fn init<P: AsRef<Path>>(path: P) -> Result<Heap> {
+    pub fn init<P: AsRef<Path>>(path: P) -> Result<Heap> {
         let mut path: PathBuf = path.as_ref().to_owned();
 
         if path.exists() {
@@ -75,7 +75,7 @@ impl Heap {
         })
     }
 
-    fn open<P: AsRef<Path>>(path: P) -> Result<Heap> {
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Heap> {
         let mut path: PathBuf = path.as_ref().to_owned();
 
         let repo = crate::repo::Repo::open(&path)?;
@@ -100,7 +100,7 @@ impl Heap {
         })
     }
 
-    fn sync(&mut self) -> Result<()> {
+    pub fn sync(&mut self) -> Result<()> {
 
         let latest_commit = match self.db.get(b"commit")? {
             Some(ivec) => {
@@ -142,6 +142,13 @@ impl Heap {
 
 
         Ok(())
+    }
+
+    /// TODO: Fix this 
+    pub fn find(&self, query: &str) -> anyhow::Result<()> {
+        let result = self.index.query(query);
+        debug!("query_result: {:?}", result);
+        return Ok(())
     }
 }
 

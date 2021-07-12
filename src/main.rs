@@ -11,6 +11,7 @@ use serde::{Serialize, Deserialize};
 use std::process::Command; 
 
 use clap::Arg;
+use clap::{crate_description, crate_authors, crate_version, crate_name};
 
 mod index;
 mod repo;
@@ -19,12 +20,18 @@ mod heap;
 
 use repo::*;
 use index::*;
+use heap::Heap;
 
 fn arg_parser<'a,'b>() -> clap::App<'a,'b> {
-    return clap::App::new("noteater")
-        .version("0.1")
-        .author("Carl Hattenfels")
-        .about("Simple note search interface")
+    clap::app_from_crate!()
+        .arg(
+            Arg::with_name("HEAP")
+                .help("Path to the card heap")
+                .short("h")
+                .long("heap")
+                .required(false)
+                .takes_value(true)
+        )
         .subcommand(clap::SubCommand::with_name("search")
             .arg(
                 Arg::with_name("QUERYSTRING")
@@ -46,16 +53,12 @@ fn arg_parser<'a,'b>() -> clap::App<'a,'b> {
             .arg(Arg::with_name("PATH")
                 .index(1)
                 .help("note path")))
-        .subcommand(clap::SubCommand::with_name("notebook")
-            .about("edit an existing note")
-            .subcommand(clap::SubCommand::with_name("create")
-                .about("create a new notebook at PATH")
-                .arg(Arg::with_name("PATH")
-                    .index(1)
-                    .help("note path"))
-            )
+        .subcommand(clap::SubCommand::with_name("init")
+            .about("create a new notebook at PATH")
+            .arg(Arg::with_name("PATH")
+                .index(1)
+                .help("note path"))
         )
-        .get_matches()
 }
 
 fn new_note<P: AsRef<Path>>(path: P) {
@@ -65,134 +68,17 @@ fn new_note<P: AsRef<Path>>(path: P) {
         .expect("wat");
 }
 
+fn heap_path(args: &clap::ArgMatches) -> Result<PathBuf> {
+    let path = if let Some(dir) = args.value_of("HEAP") {
+        Ok(PathBuf::from(dir))
+    } else {
+        std::env::var("NB")
+            .map(|s| PathBuf::from(s))
+            .or(std::env::current_dir())
+            .context("failed to find heap path")
+    };
 
-
-#[derive(Serialize, Deserialize, Default)]
-struct State {
-    commit: Option<String>, // Last index commit
-    #[serde(skip)]
-    path: PathBuf 
-}
-
-impl State {
-    fn open_or_create<P: AsRef<Path>>(path: P) -> Result<State> {
-        if !path.as_ref().to_owned().exists() {
-            let mut state: State = Default::default();
-            state.path = path.as_ref().to_owned();
-            state.save()?;
-            Ok(state)
-        } else {
-            let file = File::open(&path)?;
-            let mut state: State = serde_json::from_reader(file)
-                .context("Failed to deserialize state")?;
-            state.path = path.as_ref().to_owned();
-            Ok(state)
-        }
-    }
-
-    fn save(&self) -> Result<()> {
-        debug!("Saving state to {}", self.path.to_string_lossy());
-        let file = std::fs::OpenOptions::new().create(true).write(true).truncate(true).open(&self.path)?;
-        serde_json::to_writer(file, &self).context("Failed to serialise state")
-    }
-}
-
-struct App {
-    pub appdir: PathBuf,
-    pub config: config::Config,
-    pub index: index::Index,
-    pub repo: repo::Repo, 
-    pub state: State,
-}
-
-impl App {
-
-    //fn create<P: AsRef<Path>>(notebook: P) -> Result<App> {
-    //    if notebook.as_ref().exists() {
-    //        info!("Creating new app directory at {}", appdir.as_ref().to_string_lossy());
-    //        std::fs::create_dir_all(&appdir)?;
-    //    }
-
-    //    let config = config::Config::open_or_create(appdir.as_ref().clone().join("config.toml"))?;
-    //    let state = State::open_or_create(appdir.as_ref().clone().join("state"))?;
-    //    let repo = Repo::open_or_create(&config.notes)?;
-    //    let index = Index::open_or_create(&config.index)?;
-    //}
-
-    fn open_or_create<P: AsRef<Path>>(appdir: P) -> Result<App> {
-
-        if !appdir.as_ref().exists() {
-            info!("Creating new app directory at {}", appdir.as_ref().to_string_lossy());
-            std::fs::create_dir_all(&appdir)?;
-        }
-
-        let config = config::Config::open_or_create(appdir.as_ref().clone().join("config.toml"))?;
-        let state = State::open_or_create(appdir.as_ref().clone().join("state"))?;
-        let repo = Repo::init(&config.notes)?;
-        let index = Index::create(&config.index)?;
-
-        Ok(App {
-            config,
-            index,
-            repo,
-            state,
-            appdir: appdir.as_ref().to_path_buf()
-        })
-    }
-
-    fn sync(&mut self) -> anyhow::Result<()> {
-
-        let head = self.repo.head()?;
-        let diffs = self.repo.diff(self.state.commit.as_ref(), None)?;
-    
-        for diff in diffs {
-            match diff {
-                (git2::Delta::Added, path) | (git2::Delta::Modified, path) => { 
-                    self.index.delete(&path);
-                    println!("{:?}", path);
-
-                    let mut note = self.index.notebuilder(&path);
-
-                    let content = std::fs::read_to_string(&self.config.notes.join(&note.path))?;
-                    note.body(&content);
-
-                    //let doc = doc_builder.document();
-
-                    self.index.add(&path, note);
-                }
-                (git2::Delta::Deleted, path) => { self.index.delete(&path) } 
-                (git2::Delta::Renamed, _path) => { todo!("Handling Renaming. Need both old and new path") } 
-                _ => todo!()
-            }
-        } 
-
-        self.index.commit()?;
-        self.index.reload()?;
-
-        self.state.commit = Some(head.id().to_string());
-        self.state.save()?;
-
-
-        Ok(())
-    }
-}
-
-//fn create_notebook<P: AsRef<Path>>(path: P) -> NoteBook {
-//
-//}
-
-fn query(query: &str) -> anyhow::Result<()> {
-    let appdir = std::env::var("NB").unwrap_or("~/.nb".to_owned());
-    let mut app = App::open_or_create(appdir)?;
-    
-    app.sync()?;
-    let query = String::from(query);
-
-    if let Ok(res) = app.index.query(&query) {
-        println!("{:?}", res);
-    }
-    app.state.save()?;
-    return Ok(())
+    path.and_then(|p|p.canonicalize().context("failed to canonicalize path"))
 }
 
 fn main() -> anyhow::Result<()> {
@@ -200,44 +86,27 @@ fn main() -> anyhow::Result<()> {
 
     let app = arg_parser();
 
-    //let query = String::from(matches.value_of("QUERYSTRING").unwrap());
-    match app.clone().get_matches().subcommand() {
-        ("edit", Some(path)) => { new_note(path.value_of("PATH").unwrap()) }
-        ("init", Some(path)) => { }
-        ("search", Some(args)) => {
-            let query = String::from(args.value_of("QUERYSTRING").unwrap());
-            println!("{:?}", query);
-            //if let Ok(res) = app.index.query(&query) {
-            //    println!("{:?}", res);
-            //}
-        }
-        (command,_) => {
-            app.clone().print_help();
-            return Ok(());
-        }
-    }
-
-    let appdir = std::env::var("NB").unwrap_or("~/.nb".to_owned());
-    let mut app = App::open_or_create(appdir)?;
-
     //app.sync()?;
+    let args = app.clone().get_matches();
 
-    match matches.subcommand() {
-        ("edit", Some(path)) => { new_note(path.value_of("PATH").unwrap()) }
-        ("notebook", Some(subcommand)) => {
-            match subcommand.subcommand() {
-                ("create", Some(path)) => { println!("{:?}", path) }
-                _ => unimplemented!("unimplemented")
-            }
+    match args.subcommand() {
+        ("init", Some(subargs)) => { Heap::init(subargs.value_of("PATH").unwrap())?; }
+        ("edit", Some(subargs)) => { new_note(subargs.value_of("PATH").unwrap()) }
+        ("search", Some(subargs)) => {
+            let heap_path = heap_path(&args)?;
+            debug!("heap_path: {:?}", heap_path);
+            let mut heap = Heap::open(heap_path)?;
+            heap.sync()?;
+            let query = subargs.value_of("QUERYSTRING").unwrap();
+            debug!("query: {:?}", query);
+            heap.find(query)?;
         }
         _ => {
-            query(matches.value_of("QUERYSTRING").unwrap());
+            app.clone().print_help()?;
         }
     }
 
-
-
-    app.state.save()?;
+    //app.state.save()?;
 
     return Ok(());
 }

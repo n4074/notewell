@@ -12,9 +12,6 @@ use std::process::Command;
 
 use clap::Arg;
 
-
-//use pulldown_cmark::{Event, Options, Parser, Tag};
-
 mod index;
 mod repo;
 mod config;
@@ -43,6 +40,15 @@ fn parse_args() -> clap::ArgMatches<'static> {
             .arg(Arg::with_name("PATH")
                 .index(1)
                 .help("note path")))
+        .subcommand(clap::SubCommand::with_name("notebook")
+            .about("edit an existing note")
+            .subcommand(clap::SubCommand::with_name("create")
+                .about("create a new notebook at PATH")
+                .arg(Arg::with_name("PATH")
+                    .index(1)
+                    .help("note path"))
+            )
+        )
         .get_matches()
 }
 
@@ -52,6 +58,8 @@ fn new_note<P: AsRef<Path>>(path: P) {
         .spawn()
         .expect("wat");
 }
+
+
 
 #[derive(Serialize, Deserialize, Default)]
 struct State {
@@ -92,6 +100,19 @@ struct App {
 }
 
 impl App {
+
+    //fn create<P: AsRef<Path>>(notebook: P) -> Result<App> {
+    //    if notebook.as_ref().exists() {
+    //        info!("Creating new app directory at {}", appdir.as_ref().to_string_lossy());
+    //        std::fs::create_dir_all(&appdir)?;
+    //    }
+
+    //    let config = config::Config::open_or_create(appdir.as_ref().clone().join("config.toml"))?;
+    //    let state = State::open_or_create(appdir.as_ref().clone().join("state"))?;
+    //    let repo = Repo::open_or_create(&config.notes)?;
+    //    let index = Index::open_or_create(&config.index)?;
+    //}
+
     fn open_or_create<P: AsRef<Path>>(appdir: P) -> Result<App> {
 
         if !appdir.as_ref().exists() {
@@ -150,29 +171,46 @@ impl App {
     }
 }
 
+//fn create_notebook<P: AsRef<Path>>(path: P) -> NoteBook {
+//
+//}
+
+fn query(query: &str) -> anyhow::Result<()> {
+    let appdir = std::env::var("NB").unwrap_or("~/.nb".to_owned());
+    let mut app = App::open_or_create(appdir)?;
+    
+    app.sync()?;
+    let query = String::from(query);
+
+    if let Ok(res) = app.index.query(&query) {
+        println!("{:?}", res);
+    }
+    app.state.save()?;
+    return Ok(())
+}
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
     let matches = parse_args();
     //let query = String::from(matches.value_of("QUERYSTRING").unwrap());
-    let appdir = std::env::var("NB").unwrap_or("~/.nb".to_owned());
-    let mut app = App::open_or_create(appdir)?;
+    //let appdir = std::env::var("NB").unwrap_or("~/.nb".to_owned());
+    //let mut app = App::open_or_create(appdir)?;
 
-    app.sync()?;
+    //app.sync()?;
 
     match matches.subcommand() {
         ("edit", Some(path)) => { new_note(path.value_of("PATH").unwrap()) }
-        _ => {
-            let query = String::from(matches.value_of("QUERYSTRING").unwrap());
-            if let Ok(res) = app.index.query(&query) {
-                println!("{:?}", res);
+        ("notebook", Some(subcommand)) => {
+            match subcommand.subcommand() {
+                ("create", Some(path)) => { println!("{:?}", path) }
+                _ => unimplemented!("unimplemented")
             }
         }
+        _ => {
+            query(matches.value_of("QUERYSTRING").unwrap());
+        }
     }
-
-    
-
-    app.state.save()?;
 
     return Ok(());
 }

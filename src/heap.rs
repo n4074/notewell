@@ -202,6 +202,6 @@ mod test {
 
         let heap_opened = Heap::open(path);
         println!("Heap: {:?}", heap_opened);
-        assert!(false);
+        //assert!(false);
     }
 }

@@ -1,6 +1,8 @@
 use anyhow::{Result, Context};
 use std::path::{Path,PathBuf};
 
+use std::io::{Write};
+
 use git2::{Object, Repository, Delta, Commit};
 use git2;
 
@@ -8,20 +10,72 @@ pub struct Repo {
     repo: Repository,
 }
 
+const NB_SUBDIR: &'static str = ".nb";
+
 impl<'repo> Repo {
 
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Repo> {
-        Repository::open(path).map(|r| Repo { repo: r }).context("Failed to open git repository")
+        log::debug!("opening repository at: {:?}", path.as_ref());
+        let repo = Repository::open(path).context("Failed to open git repository")?;
+
+        Ok(Repo { repo })
     }
 
     pub fn init<P: AsRef<Path>>(path: P) -> Result<Repo> {
         let repo = Repository::init(path)?;
-        repo.add_ignore_rule(".nb")?;
-        Ok(Repo { repo })
+        let mut this = Repo { repo };
+        this.repo.add_ignore_rule(".gitgnore")?;
+        this.repo.add_ignore_rule(NB_SUBDIR)?;
+        
+        let workdir = this.repo.workdir()
+            .context("Could not obtain work directory")?;
+        
+        let gitignore = Path::new(".gitignore");
+
+        let mut output = std::fs::File::create(&workdir.join(gitignore))?;
+        write!(output, "{}", NB_SUBDIR)?;
+
+        this.commit_paths(vec!(&gitignore))?;
+
+        Ok(this)
+    }
+
+    pub fn commit_paths<P: AsRef<Path>>(&mut self, paths: Vec<P>) -> Result<()> {
+        let mut index = self.repo.index()?;
+
+        for path in paths {
+            index.add_path(path.as_ref())?;
+        }
+
+        let tree_id = index.write_tree()?;
+        index.write()?;
+
+        let tree = self.repo.find_tree(tree_id)?;
+
+        let mut parents: Vec<&git2::Commit<'_>> = vec!();
+
+        let head = self.head();
+
+        if head.is_ok() {
+            parents.push(head.as_ref().unwrap());
+        }
+
+        let signature = self.repo.signature()?;
+
+        self.repo.commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            &"auto",
+            &tree,
+            &parents
+        )?;
+
+        Ok(())
     }
 
     pub fn resolve(&self, rfn: &str) -> Result<Object<'_>> {
-        self.repo.revparse_single(rfn).context("Failed to find reference")
+        self.repo.revparse_single(rfn).context(format!("Failed to resolve reference: {}", rfn))
     }
 
     pub fn diff(&self, old: Option<&String>, new: Option<&String>) -> Result<Vec<(Delta, PathBuf)>> {
@@ -32,11 +86,15 @@ impl<'repo> Repo {
             None
         };
 
+        log::debug!("old_commit: {:?}", old);
+
         let new = if let Some(new) = new {
             Some(self.resolve(&new)?.peel_to_commit()?.tree()?)
         } else {
             Some(self.head()?.tree()?)
         };
+
+        log::debug!("new_commit: {:?}", old);
 
         // If no head, we have nothing to index
         let diff = self.repo.diff_tree_to_tree(old.as_ref(), new.as_ref(), None)?;
@@ -48,7 +106,9 @@ impl<'repo> Repo {
     }
 
     pub fn head(&'repo self) -> anyhow::Result<Commit<'repo>> {
-        Ok(self.repo.head()?.peel_to_commit()?)
+        self.repo.head()
+            .and_then(|h| h.peel_to_commit())
+            .context("Failed to find HEAD")
     }
 }
 
@@ -159,7 +219,7 @@ mod tests {
             println!("{:?}\n", delta);
         }
 
-        assert!(false);
+        //assert!(false);
         Ok(())
     }
 

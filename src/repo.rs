@@ -35,12 +35,12 @@ impl<'repo> Repo {
         let mut output = std::fs::File::create(&workdir.join(gitignore))?;
         write!(output, "{}", NB_SUBDIR)?;
 
-        this.commit_paths(vec!(&gitignore))?;
+        this.commit_paths(&[&gitignore])?;
 
         Ok(this)
     }
 
-    pub fn commit_paths<P: AsRef<Path>>(&mut self, paths: Vec<P>) -> Result<()> {
+    pub fn commit_paths<P: AsRef<Path>>(&mut self, paths: &[P]) -> Result<()> {
         let mut index = self.repo.index()?;
 
         for path in paths {

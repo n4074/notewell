@@ -1,6 +1,5 @@
-use anyhow::{Result, bail};
-//use std::fs::File;
-//use std::io::Read;
+use anyhow::{Result, bail, Context};
+use std::process::Command; 
 use std::path::{PathBuf, Path};
 use log::{debug};
 
@@ -33,7 +32,7 @@ const NB_SUBDIR: &str = ".nb";
 
 impl Heap {
     pub fn init<P: AsRef<Path>>(path: P) -> Result<Heap> {
-        let path: PathBuf = path.as_ref().to_owned();
+        let path: PathBuf = path.as_ref().to_owned().canonicalize()?;
 
         if path.exists() {
             bail!("Directory exists: {}", path.display());
@@ -70,7 +69,7 @@ impl Heap {
     }
 
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Heap> {
-        let path: PathBuf = path.as_ref().to_owned();
+        let path: PathBuf = path.as_ref().to_owned().canonicalize()?;
 
         let repo = crate::repo::Repo::open(&path)?;
 
@@ -131,9 +130,6 @@ impl Heap {
         self.index.reload()?;
 
         self.db.insert(b"commit", head.id().to_string().into_bytes())?;
-        //self.state.commit = Some(head.id().to_string());
-        //self.state.save()?;
-
 
         Ok(())
     }
@@ -143,6 +139,17 @@ impl Heap {
         let result = self.index.query(query);
         debug!("query_result: {:?}", result);
         return Ok(())
+    }
+    
+    pub fn edit_card<P: AsRef<Path> + Copy>(&mut self, path: P) -> Result<()> {
+        let mut child = Command::new("vim")
+            .args(&[self.path.join(path)])
+            .spawn()
+            .expect("failed to launch editor");
+
+        let exit = child.wait().context("failed to wait on editor subprocess")?;
+        
+        self.repo.commit_paths(&[path])
     }
 }
 

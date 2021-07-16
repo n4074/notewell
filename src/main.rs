@@ -1,9 +1,7 @@
 use log::{debug};
-use std::path::{PathBuf, Path};
+use std::path::{PathBuf};
 
 use anyhow::{Context, Result};
-
-use std::process::Command; 
 
 use clap::Arg;
 use clap::{crate_description, crate_authors, crate_version, crate_name};
@@ -39,8 +37,9 @@ fn arg_parser<'a,'b>() -> clap::App<'a,'b> {
         )
         .subcommand(clap::SubCommand::with_name("add")
             .about("add a new note")
-            .arg(Arg::with_name("path")
-                .short("p")
+            .arg(Arg::with_name("PATH")
+                .takes_value(true)
+                .index(1)
                 .help("note path"))
         )
         .subcommand(clap::SubCommand::with_name("edit")
@@ -56,12 +55,7 @@ fn arg_parser<'a,'b>() -> clap::App<'a,'b> {
         )
 }
 
-fn new_note<P: AsRef<Path>>(path: P) {
-    Command::new("vim")
-        .args(&[path.as_ref()])
-        .spawn()
-        .expect("wat");
-}
+
 
 fn heap_path(args: &clap::ArgMatches) -> Result<PathBuf> {
     let path = if let Some(dir) = args.value_of("HEAP") {
@@ -80,28 +74,29 @@ fn main() -> anyhow::Result<()> {
     env_logger::init();
 
     let app = arg_parser();
+    let matches = app.clone().get_matches();
 
-    //app.sync()?;
-    let args = app.clone().get_matches();
+    if let Some(args) = matches.subcommand_matches("init") {
+        Heap::init(args.value_of("PATH").unwrap())?;
+        return Ok(())
+    }
 
-    match args.subcommand() {
-        ("init", Some(subargs)) => { Heap::init(subargs.value_of("PATH").unwrap())?; }
-        ("edit", Some(subargs)) => { new_note(subargs.value_of("PATH").unwrap()) }
-        ("search", Some(subargs)) => {
-            let heap_path = heap_path(&args)?;
-            debug!("heap_path: {:?}", heap_path);
-            let mut heap = Heap::open(heap_path)?;
-            heap.sync()?;
+    match (matches.subcommand(), heap_path(&matches)) {
+        (("add", Some(subargs)), Ok(heap_path)) => { 
+            let path = subargs.value_of("PATH").unwrap();
+            Heap::open(heap_path)?.edit_card(path)?;
+        }
+        (("search", Some(subargs)), Ok(heap_path)) => {
             let query = subargs.value_of("QUERYSTRING").unwrap();
             debug!("query: {:?}", query);
+            let mut heap = Heap::open(heap_path)?;
+            heap.sync()?;
             heap.find(query)?;
         }
         _ => {
             app.clone().print_help()?;
         }
     }
-
-    //app.state.save()?;
 
     return Ok(());
 }

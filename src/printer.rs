@@ -1,7 +1,12 @@
+use anyhow::Result;
 use tantivy::Document;
 
-fn list_results(docs: Vec<Document>>) {
+use crate::index::QueryResult;
+
+pub fn list_results(docs: Vec<QueryResult>) -> Result<()> {
     for doc in docs {
-        println!("path: {}", doc.get_first(path).unwrap().text().unwrap());
+        println!("result: {:?}", doc);
     }
+
+    Ok(())
 }

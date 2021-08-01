@@ -11,6 +11,7 @@ mod repo;
 //mod config;
 mod heap;
 mod card;
+mod printer;
 
 //use repo::*;
 use index::*;
@@ -36,6 +37,7 @@ fn arg_parser<'a,'b>() -> clap::App<'a,'b> {
                     .multiple(true),
             )
         )
+        .subcommand(clap::SubCommand::with_name("sync"))
         .subcommand(clap::SubCommand::with_name("add")
             .about("add a new note")
             .arg(Arg::with_name("PATH")
@@ -56,8 +58,6 @@ fn arg_parser<'a,'b>() -> clap::App<'a,'b> {
                 .help("note path"))
         )
 }
-
-
 
 fn heap_path(args: &clap::ArgMatches) -> Result<PathBuf> {
     let path = if let Some(dir) = args.value_of("HEAP") {
@@ -84,7 +84,10 @@ fn main() -> anyhow::Result<()> {
     }
 
     match (matches.subcommand(), heap_path(&matches)) {
-        (("add", Some(subargs)), Ok(heap_path)) => { 
+        (("sync", Some(subargs)), Ok(heap_path)) => { 
+            //let path = subargs.value_of("PATH").unwrap();
+            Heap::open(heap_path)?.sync()?;
+        }(("add", Some(subargs)), Ok(heap_path)) => { 
             //let path = subargs.value_of("PATH").unwrap();
             Heap::open(heap_path)?.add_card(subargs.value_of("PATH"))?;
         }
@@ -97,7 +100,8 @@ fn main() -> anyhow::Result<()> {
             debug!("query: {:?}", query);
             let mut heap = Heap::open(heap_path)?;
             heap.sync()?;
-            heap.find(query)?;
+            let res = heap.find(query)?;
+            printer::list_results(res)?;
         }
         _ => {
             app.clone().print_help()?;

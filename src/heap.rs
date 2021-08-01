@@ -139,10 +139,13 @@ impl Heap {
     }
 
     /// TODO: Fix this 
-    pub fn find(&self, query: &str) -> anyhow::Result<()> {
-        let result = self.index.query(query);
+    pub fn find(&self, query: &str) -> anyhow::Result<Vec<index::QueryResult>> {
+        let result = self.index.query(query)?;
         debug!("query_result: {:?}", result);
-        return Ok(())
+        //for doc in result {
+        //    let res = QueryResult("wat");
+        //}
+        return Ok(result)
     }
 
     pub fn add_card<P: AsRef<Path>>(&mut self, path: Option<P>) -> Result<()> {
@@ -164,6 +167,8 @@ impl Heap {
         self.repo.commit_paths(&[path])
     }
 }
+
+pub struct SearchResult(PathBuf, String);
 
 //impl HeapState {
 //    fn open<P: AsRef<Path>>(path: P) -> Result<State> {

@@ -11,6 +11,8 @@ use tantivy::UserOperation;
 
 use std::path::{PathBuf,Path};
 
+use crate::card::Card;
+
 pub struct Index {
     _index: tantivy::Index,
     reader: tantivy::IndexReader,
@@ -18,6 +20,12 @@ pub struct Index {
     schema: tantivy::schema::Schema,
     queryparser: tantivy::query::QueryParser,
     transactions: Vec<tantivy::UserOperation>,
+}
+
+#[derive(Debug)]
+pub struct QueryResult {
+    card: Card,
+    snippet: String
 }
 
 pub struct Note {
@@ -101,7 +109,7 @@ impl Index {
         self.reader.reload().context("Failed to reload index")
     }
 
-    pub fn query(&self, query: &str) -> anyhow::Result<Vec<Document>> {
+    pub fn query(&self, query: &str) -> anyhow::Result<Vec<QueryResult>> {
         let searcher = self.reader.searcher();
 
         let query = self.queryparser.parse_query(query)?;
@@ -126,7 +134,17 @@ impl Index {
 
         let docs: Vec<Document> = top_docs.iter().map(|(_,addr)| searcher.doc(*addr).unwrap()).collect();
 
-        return Ok(docs);
+        let results = docs.iter().map(|doc|
+            QueryResult {
+                card: Card {
+                    path: doc.get_first(_path).unwrap().text().unwrap().to_owned(),
+                    attributes: std::collections::HashMap::new()
+                },
+                snippet: _snippet_generator.snippet_from_doc(&doc).fragments().to_owned()
+            }
+        ).collect();
+
+        return Ok(results);
     }
 
     fn build_schema() -> anyhow::Result<tantivy::schema::Schema> {

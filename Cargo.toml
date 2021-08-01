@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["Carl Hattenfels <carl.hattenfels@gmail.com>"]
 edition = "2018"
 
+[[bin]]
+name = "nb"
+path = "src/main.rs"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -21,3 +25,4 @@ thiserror = "*"
 git2 = "*"
 tantivy = "0.14.0"
 sled = "*"
+rusty_ulid = "*"

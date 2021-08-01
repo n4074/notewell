@@ -10,6 +10,7 @@ mod index;
 mod repo;
 //mod config;
 mod heap;
+mod card;
 
 //use repo::*;
 use index::*;
@@ -40,6 +41,7 @@ fn arg_parser<'a,'b>() -> clap::App<'a,'b> {
             .arg(Arg::with_name("PATH")
                 .takes_value(true)
                 .index(1)
+                .required(false)
                 .help("note path"))
         )
         .subcommand(clap::SubCommand::with_name("edit")
@@ -83,6 +85,10 @@ fn main() -> anyhow::Result<()> {
 
     match (matches.subcommand(), heap_path(&matches)) {
         (("add", Some(subargs)), Ok(heap_path)) => { 
+            //let path = subargs.value_of("PATH").unwrap();
+            Heap::open(heap_path)?.add_card(subargs.value_of("PATH"))?;
+        }
+        (("edit", Some(subargs)), Ok(heap_path)) => { 
             let path = subargs.value_of("PATH").unwrap();
             Heap::open(heap_path)?.edit_card(path)?;
         }

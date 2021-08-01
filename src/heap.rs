@@ -1,10 +1,13 @@
 use anyhow::{Result, bail, Context};
 use std::process::Command; 
 use std::path::{PathBuf, Path};
-use log::{debug};
+use log::{debug, info};
+
+use toml;
 
 use crate::repo;
 use crate::index;
+use crate::card::Card;
 
 #[derive(Debug)]
 struct HeapState {
@@ -32,7 +35,8 @@ const NB_SUBDIR: &str = ".nb";
 
 impl Heap {
     pub fn init<P: AsRef<Path>>(path: P) -> Result<Heap> {
-        let path: PathBuf = path.as_ref().to_owned().canonicalize()?;
+        let path = path.as_ref().to_owned();
+        log::debug!("input_path:{:?}", path);
 
         if path.exists() {
             bail!("Directory exists: {}", path.display());
@@ -140,6 +144,14 @@ impl Heap {
         debug!("query_result: {:?}", result);
         return Ok(())
     }
+
+    pub fn add_card<P: AsRef<Path>>(&mut self, path: Option<P>) -> Result<()> {
+
+        if let Some(_path) = path {
+
+        }
+        unimplemented!() 
+    }
     
     pub fn edit_card<P: AsRef<Path> + Copy>(&mut self, path: P) -> Result<()> {
         let mut child = Command::new("vim")
@@ -147,7 +159,7 @@ impl Heap {
             .spawn()
             .expect("failed to launch editor");
 
-        let exit = child.wait().context("failed to wait on editor subprocess")?;
+        let _exit = child.wait().context("failed to wait on editor subprocess")?;
         
         self.repo.commit_paths(&[path])
     }
